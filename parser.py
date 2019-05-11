@@ -15,6 +15,7 @@ N_LAYERS = 1
 N_BATCH = 256
 
 random = np.random.RandomState(SEED)
+device = torch.device("cuda:0")
 
 class WordPredictor(nn.Module):
     def __init__(self, vocab):
@@ -30,6 +31,7 @@ class WordPredictor(nn.Module):
         n_seq, n_batch = ref.shape[:2]
         if context is None:
             state = [torch.zeros(N_LAYERS, n_batch, N_HIDDEN) for _ in range(2)]
+            state = [s.to(target.device) for s in state]
         else:
             _, state = self.encoder(context)
         pred, _, _, _ = self.decoder(state, ref.shape[0], ref)
@@ -73,7 +75,7 @@ def sample_batch(corpus):
             [right[0]] + left_rev,
             right_rev
         ))
-    left, right, left_rev, right_rev = (batch_seqs(s) for s in zip(*data))
+    left, right, left_rev, right_rev = (batch_seqs(s).to(device) for s in zip(*data))
     return left, right, left_rev, right_rev
 
 def parser_batch(string, offset_left=0, offset_right=0):
@@ -89,7 +91,7 @@ def parser_batch(string, offset_left=0, offset_right=0):
             [right[0]] + left_rev,
             right_rev
         ))
-    left, right, left_rev, right_rev = (batch_seqs(s) for s in zip(*data))
+    left, right, left_rev, right_rev = (batch_seqs(s).to(device) for s in zip(*data))
     return left, right, left_rev, right_rev
 
 def parse(string, scorer, depth):
@@ -100,6 +102,7 @@ def parse(string, scorer, depth):
     batch = parser_batch(string, offset_l, offset_r)
     conditional, unconditional = scorer(*batch)
     scores = torch.log_softmax(conditional, dim=0) - torch.log_softmax(unconditional, dim=0)
+    print(scores)
     split = 1 + offset_l + torch.argmin(scores)
     left, right = string[:split], string[split:]
     return (parse(left, scorer, depth - 1), parse(right, scorer, depth - 1))
@@ -112,12 +115,12 @@ def pp(tree):
 
 def validate(corpus, scorer):
     for i in range(3):
-        string = corpus.val.strings[random.randint(len(corpus.val.strings))]
+        string = corpus.train.strings[random.randint(len(corpus.val.strings))]
         print(pp(parse(string, scorer, depth=5)))
 
 def main():
-    corpus = load_english_treebank(max_length=40)
-    scorer = SplitScorer(corpus.vocab)
+    corpus = load_english_treebank(max_length=40, strip_punct=True)
+    scorer = SplitScorer(corpus.vocab).to(device)
     opt = optim.Adam(scorer.parameters(), lr=0.001)
     for i_epoch in range(100):
         epoch_loss = 0

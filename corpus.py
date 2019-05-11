@@ -8,6 +8,9 @@ from torchdec.vocab import Vocab
 Corpus = namedtuple("Corpus", "train val test vocab")
 Fold = namedtuple("Fold", "strings trees")
 
+TRACE = "-NONE-"
+PUNCT = {".", ",", "''", "``", ":", "-LQUOT--LQUOT-", "-RQUOT--RQUOT-"}
+
 def tree_flatten(tree):
     if isinstance(tree, tuple):
         return sum([tree_flatten(t) for t in tree], ())
@@ -23,11 +26,14 @@ def tree_map(fn, tree):
         return tuple(tree_map(t) for t in tree)
     return fn(tree)
 
-def sexp_clean(parsed):
+def sexp_clean(parsed, strip_punct):
     def helper(tree):
         if isinstance(tree, list):
             rec = tuple(helper(t) for t in tree)
-            return tuple(r for r in rec if r[0] != "-NONE-")
+            out = tuple(r for r in rec if len(r) > 0 and r[0] != TRACE)
+            if strip_punct:
+                out = tuple(r for r in out if len(r) > 0 and r[0] not in PUNCT)
+            return out
         elif isinstance(tree, sexpdata.Symbol):
             value = tree.value()
         elif isinstance(tree, int) or isinstance(tree, float):
@@ -38,40 +44,41 @@ def sexp_clean(parsed):
     tree, = parsed
     return helper(tree)
 
-def read_ptb_tree(sexp):
+def read_ptb_tree(sexp, strip_punct):
     escaped = sexp.replace("'", "-LQUOT-").replace("`", "-RQUOT-")
     parsed = sexpdata.loads(escaped)
-    cleaned = sexp_clean(parsed)
+    cleaned = sexp_clean(parsed, strip_punct)
     return cleaned
 
-def load_ptb(filename, max_length=None):
+def load_ptb(filename, max_length=None, strip_punct=False):
     out = []
     with open(filename) as f:
         for line in f:
-            #if len(out) >= 1000:
-            #    break
+            if len(out) >= 1000:
+                break
             try:
-                tree = read_ptb_tree(line.strip())
+                tree = read_ptb_tree(line.strip(), strip_punct)
                 if max_length is not None and len(tree_yield(tree)) >= max_length:
                     continue
                 out.append(tree)
-            except:
+            except sexpdata.ExpectClosingBracket as e:
                 pass
     return out
 
-def load_english_treebank(max_length=None):
-    DATA_DIR = "/Users/jaandrea/data/english_treebank"
+def load_english_treebank(max_length=None, strip_punct=False):
+    #DATA_DIR = "/Users/jaandrea/data/english_treebank"
+    DATA_DIR = "/data/jda/data/english_treebank"
     train_trees = load_ptb(
         os.path.join(DATA_DIR, "alltrees_train_2to21.mrg.oneline"),
-        max_length=max_length
+        max_length=max_length, strip_punct=strip_punct
     )
     val_trees = load_ptb(
         os.path.join(DATA_DIR, "alltrees_dev.mrg.oneline"),
-        max_length=max_length
+        max_length=max_length, strip_punct=strip_punct
     )
     test_trees = load_ptb(
         os.path.join(DATA_DIR, "alltrees_test.mrg.oneline"),
-        max_length=max_length
+        max_length=max_length, strip_punct=strip_punct
     )
     train_strings = [tree_yield(t) for t in train_trees]
     vocab = Vocab()
