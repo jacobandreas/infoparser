@@ -15,7 +15,8 @@ N_LAYERS = 1
 N_BATCH = 256
 
 random = np.random.RandomState(SEED)
-device = torch.device("cuda:0")
+#device = torch.device("cuda:0")
+device=  torch.device("cpu:0")
 
 class WordPredictor(nn.Module):
     def __init__(self, vocab):
@@ -38,7 +39,7 @@ class WordPredictor(nn.Module):
         pred = pred.view(n_seq * n_batch, -1)
         tgt = tgt.view(n_seq * n_batch)
         scores = self.score(pred, tgt).view(n_seq, n_batch)
-        return scores.sum(dim=0)
+        return -scores.sum(dim=0)
 
 class SplitScorer(nn.Module):
     def __init__(self, vocab):
@@ -94,29 +95,80 @@ def parser_batch(string, offset_left=0, offset_right=0):
     left, right, left_rev, right_rev = (batch_seqs(s).to(device) for s in zip(*data))
     return left, right, left_rev, right_rev
 
+def right_branching(string):
+    if len(string) == 1:
+        return tuple(string)
+    return ((string[0],), right_branching(string[1:]))
+
 def parse(string, scorer, depth):
+    assert string[0] != scorer.vocab.sos()
+    assert string[-1] != scorer.vocab.eos()
     offset_l = 1 if string[0] == scorer.vocab.sos() else 0
     offset_r = 1 if string[-1] == scorer.vocab.eos() else 0
     if depth == 0 or len(string) - offset_l - offset_r == 1:
-        return " ".join(scorer.vocab.decode(string))
+        #return " ".join(scorer.vocab.decode(string))
+        return right_branching(string)
     batch = parser_batch(string, offset_l, offset_r)
     conditional, unconditional = scorer(*batch)
-    scores = torch.log_softmax(conditional, dim=0) - torch.log_softmax(unconditional, dim=0)
-    print(scores)
+    scores = conditional - unconditional
     split = 1 + offset_l + torch.argmin(scores)
     left, right = string[:split], string[split:]
     return (parse(left, scorer, depth - 1), parse(right, scorer, depth - 1))
-    return (scorer.vocab.decode(string[:split]), scorer.vocab.decode(string[split:]))
 
 def pp(tree):
-    if isinstance(tree, str):
-        return tree
+    if not isinstance(tree, tuple):
+        return str(tree)
     return "(%s)" % " ".join(pp(t) for t in tree)
 
+def evaluate(pred_tree, gold_tree):
+    def spans(tree):
+        found = []
+        def traverse(subtree, start):
+            if not isinstance(subtree, tuple):
+                found.append((start, start + 1))
+                return start + 1
+            end = start
+            for t in subtree:
+                end = traverse(t, end)
+            found.append((start, end))
+            return end
+        traverse(tree, 0)
+        found = [s for s in found if s[1] > s[0] + 1]
+        return set(found)
+    pred_spans = spans(pred_tree)
+    gold_spans = spans(gold_tree)
+    tp = len(pred_spans & gold_spans)
+    fp = len(pred_spans - gold_spans)
+    fn = len(gold_spans - pred_spans)
+    return tp, fp, fn
+    #fp = len(t for t in pred_spans if t not in gold_spans)
+    #fn = len(t for t in gold_spans if t not in pred_spans)
+
 def validate(corpus, scorer):
-    for i in range(3):
-        string = corpus.train.strings[random.randint(len(corpus.val.strings))]
-        print(pp(parse(string, scorer, depth=5)))
+    #for i in range(3):
+    #    string = corpus.train.strings[random.randint(len(corpus.val.strings))]
+    #    print(pp(parse(string, scorer, depth=2)))
+    tps = []
+    fps = []
+    fns = []
+    f1s = []
+    for string, tree in zip(corpus.train.strings, corpus.train.trees):
+        pred_tree = parse(string, scorer, depth=2)
+        tp, fp, fn = evaluate(pred_tree, tree)
+        if tp == fp == fn == 0:
+            continue
+        tps.append(tp)
+        fps.append(fp)
+        fns.append(fp)
+        p = tp / (tp + fp)
+        r = tp / (tp + fn)
+        f1s.append(2 * p * r / (p + r))
+    macro_f1 = np.mean(f1s)
+    p = sum(tps) / (sum(tps) + sum(fps))
+    r = sum(tps) / (sum(tps) + sum(fns))
+    micro_f1 = 2 * p * r / (p + r)
+    print("macro_f1", macro_f1)
+    print("micro_f1", micro_f1)
 
 def main():
     corpus = load_english_treebank(max_length=40, strip_punct=True)
@@ -124,15 +176,15 @@ def main():
     opt = optim.Adam(scorer.parameters(), lr=0.001)
     for i_epoch in range(100):
         epoch_loss = 0
-        for i_batch in range(10):
+        for i_batch in range(50):
             batch = sample_batch(corpus)
             conditional, unconditional = scorer(*batch)
-            loss = (conditional + unconditional).mean()
+            loss = -(conditional + unconditional).mean()
             opt.zero_grad()
             loss.backward()
             opt.step()
             epoch_loss += loss.item()
-        print(epoch_loss / 10)
+        print(epoch_loss / 50)
         validate(corpus, scorer)
 
 if __name__ == "__main__":

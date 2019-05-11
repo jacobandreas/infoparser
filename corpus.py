@@ -23,8 +23,13 @@ def tree_yield(tree):
 
 def tree_map(fn, tree):
     if isinstance(tree, tuple):
-        return tuple(tree_map(t) for t in tree)
+        return tuple(tree_map(fn, t) for t in tree)
     return fn(tree)
+
+def tree_to_bracketing(tree):
+    if isinstance(tree, str):
+        return tree.lower()
+    return tuple(tree_to_bracketing(t) for t in tree[1:])
 
 def sexp_clean(parsed, strip_punct):
     def helper(tree):
@@ -66,8 +71,8 @@ def load_ptb(filename, max_length=None, strip_punct=False):
     return out
 
 def load_english_treebank(max_length=None, strip_punct=False):
-    #DATA_DIR = "/Users/jaandrea/data/english_treebank"
-    DATA_DIR = "/data/jda/data/english_treebank"
+    DATA_DIR = "/Users/jaandrea/data/english_treebank"
+    #DATA_DIR = "/data/jda/data/english_treebank"
     train_trees = load_ptb(
         os.path.join(DATA_DIR, "alltrees_train_2to21.mrg.oneline"),
         max_length=max_length, strip_punct=strip_punct
@@ -90,9 +95,11 @@ def load_english_treebank(max_length=None, strip_punct=False):
             ("train", train_trees), ("val", val_trees), ("test", test_trees)
     ]:
         strings = [tree_yield(t) for t in trees]
-        #trees_i = [tree_map(vocab.index, t) for t in trees]
-        strings_i = [vocab.encode(s, unk=True) for s in strings]
-        folds[fold] = Fold(strings_i, None)
+        trees_i = [tree_to_bracketing(t) for t in trees]
+        trees_i = [tree_map(lambda i: vocab[i] if i in vocab else vocab.unk(), t) for t in trees_i]
+        #strings_i = [vocab.encode(s, unk=True) for s in strings]
+        strings_i = [[vocab[i] if i in vocab else vocab.unk() for i in s] for s in strings]
+        folds[fold] = Fold(strings_i, trees_i)
     return Corpus(folds["train"], folds["val"], folds["test"], vocab)
 
 if __name__ == "__main__":
