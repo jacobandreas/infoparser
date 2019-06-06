@@ -71,20 +71,35 @@ def load_ptb(filename, max_length=None, strip_punct=False):
     return out
 
 def load_english_treebank(max_length=None, strip_punct=False):
-    DATA_DIR = "/Users/jaandrea/data/english_treebank"
-    #DATA_DIR = "/data/jda/data/english_treebank"
+    #DATA_DIR = "/Users/jaandrea/data/english_treebank"
+    ##DATA_DIR = "/data/jda/data/english_treebank"
+    #train_trees = load_ptb(
+    #    os.path.join(DATA_DIR, "alltrees_train_2to21.mrg.oneline"),
+    #    max_length=max_length, strip_punct=strip_punct
+    #)
+    #val_trees = load_ptb(
+    #    os.path.join(DATA_DIR, "alltrees_dev.mrg.oneline"),
+    #    max_length=max_length, strip_punct=strip_punct
+    #)
+    #test_trees = load_ptb(
+    #    os.path.join(DATA_DIR, "alltrees_test.mrg.oneline"),
+    #    max_length=max_length, strip_punct=strip_punct
+    #)
+
+    DATA_DIR = "/Users/jaandrea/data/fake_treebank"
     train_trees = load_ptb(
-        os.path.join(DATA_DIR, "alltrees_train_2to21.mrg.oneline"),
+        os.path.join(DATA_DIR, "train.txt"),
         max_length=max_length, strip_punct=strip_punct
     )
     val_trees = load_ptb(
-        os.path.join(DATA_DIR, "alltrees_dev.mrg.oneline"),
+        os.path.join(DATA_DIR, "val.txt"),
         max_length=max_length, strip_punct=strip_punct
     )
     test_trees = load_ptb(
-        os.path.join(DATA_DIR, "alltrees_test.mrg.oneline"),
+        os.path.join(DATA_DIR, "test.txt"),
         max_length=max_length, strip_punct=strip_punct
     )
+
     train_strings = [tree_yield(t) for t in train_trees]
     vocab = Vocab()
     for string in train_strings:

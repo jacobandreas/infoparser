@@ -46,14 +46,15 @@ class SplitScorer(nn.Module):
         super().__init__()
         self.vocab = vocab
         self.forward_pred = WordPredictor(vocab)
-        self.backward_pred = WordPredictor(vocab)
+        #self.backward_pred = WordPredictor(vocab)
 
     def forward(self, left_forward, right_forward, left_backward, right_backward):
         forward_cond = self.forward_pred(left_forward, right_forward)
         forward_uncond = self.forward_pred(None, right_forward)
-        backward_cond = self.backward_pred(right_backward, left_backward)
-        backward_uncond = self.backward_pred(None, left_backward)
-        return forward_cond + backward_cond, forward_uncond + backward_uncond
+        #backward_cond = self.backward_pred(right_backward, left_backward)
+        #backward_uncond = self.backward_pred(None, left_backward)
+        #return forward_cond + backward_cond, forward_uncond + backward_uncond
+        return forward_cond, forward_uncond
 
 def sample_batch(corpus):
     strings = corpus.train.strings
@@ -152,8 +153,8 @@ def validate(corpus, scorer):
     fps = []
     fns = []
     f1s = []
-    for string, tree in zip(corpus.train.strings, corpus.train.trees):
-        pred_tree = parse(string, scorer, depth=2)
+    for string, tree in zip(corpus.val.strings, corpus.val.trees):
+        pred_tree = parse(string, scorer, depth=1)
         tp, fp, fn = evaluate(pred_tree, tree)
         if tp == fp == fn == 0:
             continue
@@ -170,13 +171,15 @@ def validate(corpus, scorer):
     print("macro_f1", macro_f1)
     print("micro_f1", micro_f1)
 
+n_epoch = 50
+#n_epoch = 10
 def main():
     corpus = load_english_treebank(max_length=40, strip_punct=True)
     scorer = SplitScorer(corpus.vocab).to(device)
     opt = optim.Adam(scorer.parameters(), lr=0.001)
     for i_epoch in range(100):
         epoch_loss = 0
-        for i_batch in range(50):
+        for i_batch in range(n_epoch):
             batch = sample_batch(corpus)
             conditional, unconditional = scorer(*batch)
             loss = -(conditional + unconditional).mean()
@@ -184,7 +187,7 @@ def main():
             loss.backward()
             opt.step()
             epoch_loss += loss.item()
-        print(epoch_loss / 50)
+        print(epoch_loss / n_epoch)
         validate(corpus, scorer)
 
 if __name__ == "__main__":
